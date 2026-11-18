@@ -1,6 +1,6 @@
 # BK-Light ESP32 clock
 
-An ESP32 firmware that turns a cheap **BK-Light Bluetooth LED panel** (64×16 ACT1025/ACT1033 or 32×32 ACT1026) into a standalone wall clock: time, weather, calendar and messages, with auto-brightness from a light sensor. No phone app, no cloud account and no hub. The ESP32 talks to the panel over BLE and pulls everything else from the internet itself.
+An ESP32 firmware that turns a cheap ACTION bought **BK-Light Bluetooth LED panel** (64×16 ACT1025/ACT1033 or 32×32 ACT1026) into a standalone wall clock: time, weather, calendar and messages, with auto-brightness from a light sensor. No phone app, no cloud account and no hub. The ESP32 talks to the panel over BLE and pulls everything else from the internet itself.
 
 ![Clock with weather](docs/64x16_font_Slim_a.png)
 ![Calendar event](docs/64x16_event_today.png)
