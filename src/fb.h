@@ -12,7 +12,7 @@ class Framebuffer {
  public:
   static constexpr int kMaxPixels = 64 * 64;
 
-  Framebuffer(int w, int h) : w_(w), h_(h) { clear(); }
+  Framebuffer(int w, int h) : w_(w), h_(h), clipY0_(0), clipY1_(h) { clear(); }
 
   int width() const { return w_; }
   int height() const { return h_; }
@@ -27,8 +27,19 @@ class Framebuffer {
     }
   }
 
+  // Only rows y0 <= y < y1 can be drawn until noClip(). Used to slide a
+  // block of the screen without touching what is above or below it.
+  void clipRows(int y0, int y1) {
+    clipY0_ = y0 < 0 ? 0 : y0;
+    clipY1_ = y1 > h_ ? h_ : y1;
+  }
+  void noClip() {
+    clipY0_ = 0;
+    clipY1_ = h_;
+  }
+
   void set(int x, int y, RGB c) {
-    if (x < 0 || y < 0 || x >= w_ || y >= h_) return;
+    if (x < 0 || x >= w_ || y < clipY0_ || y >= clipY1_) return;
     uint8_t* p = px_ + (y * w_ + x) * 3;
     p[0] = c.r;
     p[1] = c.g;
@@ -53,5 +64,6 @@ class Framebuffer {
 
  private:
   int w_, h_;
+  int clipY0_, clipY1_;
   uint8_t px_[kMaxPixels * 3];
 };

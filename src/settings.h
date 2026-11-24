@@ -15,6 +15,9 @@ struct Settings {
   uint8_t hwBrightness;  // 1 = panel's own brightness command, 0 = dim the pixels
   uint8_t autoMin;       // auto mode maps dark..bright onto autoMin..autoMax
   uint8_t autoMax;
+  // Added later: older saved records are shorter and keep these at defaults.
+  uint8_t indoorSlide;   // 1 = slide to the indoor temperature every minute (daytime)
+  uint8_t indoorOffset;  // calibration, 0..100 = -5.0..+5.0 degC (50 = none)
 };
 
 void settingsDefaults(Settings& s);

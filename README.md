@@ -5,11 +5,13 @@ An ESP32 firmware that turns a cheap ACTION bought **BK-Light Bluetooth LED pane
 ![Clock with weather](docs/64x16_font_Slim_a.png)
 ![Calendar event](docs/64x16_event_today.png)
 ![Night mode](docs/64x16_font_Slim_night.png)
+![Indoor temperature slide](docs/indoor_slide_64x16.gif)
 
 - **Clock:** NTP, any POSIX time zone, summer time handled automatically. Four fonts (Segment, Rounded, Slim, Dots), switchable on the settings page.
 - **Weather:** [Open-Meteo](https://open-meteo.com/) (no API key). Icon plus temperature, one decimal between −10 and 10 °C, blue at 0 °C or below and orange from 25 °C.
 - **Calendar:** reads a public/secret `.ics` link (iCloud, Google, Nextcloud…) itself, including repeating events. Today's and tomorrow's events rotate in for a few seconds a minute.
 - **Messages:** `POST /msg` from Home Assistant, a script or a phone shortcut. Long messages rotate with the clock instead of hiding it.
+- **Indoor temperature (optional):** a 100k NTC on an ADC pin. At each new minute during the day, the weather slides down to the indoor temperature with a house icon for 5 seconds, then slides back.
 - **Auto-brightness:** a phototransistor (two ranges on the ADC) or a VEML7700. Fast to brighten, slow to dim, and a red clock-only night mode in the dark.
 - **Settings page** at `http://clock.local/`: font, brightness, night mode, live status.
 - **Wi-Fi updates** from the Arduino IDE or a browser, with automatic rollback if a new build can't get online.
@@ -27,6 +29,7 @@ All screens at a glance: [64×16](docs/sheet_64x16.png), [32×32](docs/sheet_32x
 | iCloud public calendar link | ✅ tested (yearly all-day events) |
 | Phototransistor auto-brightness, pixel dimming | ✅ in use, lux calibration is approximate |
 | Builds for ESP32-S3, 32×32 panel, VEML7700 | ⚠️ compile-tested only |
+| Indoor NTC thermometer and the minute slide | ⚠️ compile-tested, maths and animation tested on a PC, not yet run on hardware |
 | Browser upload page `/update` | ⚠️ compile-tested only |
 | Panel brightness command `05 00 04 80 LL` | ⚠️ from the iPixel protocol family, not confirmed on BK-Light. Pixel dimming is the default |
 | arduino-esp32 2.0.x | ⚠️ compiles, not run on hardware |
@@ -35,9 +38,12 @@ All screens at a glance: [64×16](docs/sheet_64x16.png), [32×32](docs/sheet_32x
 
 - **ESP32** dev board. A classic ESP32 is what's tested; an ESP32-S3 should work (set the pins in the config). The firmware needs about 1.5 MB of flash per app slot and leaves ~60 KB of heap free.
 - **BK-Light panel**, powered from its own USB supply. The ESP32 can share that 5 V supply.
+- **Indoor thermometer (optional):** a 100k NTC thermistor, a 100 kΩ 1 % resistor and a 100 nF capacitor.
 - **Light sensor (optional):** a 3DU33 or similar NPN phototransistor plus 100 kΩ, 10 kΩ and 1 µF, or a VEML7700 breakout. Without a sensor, brightness and night mode come from the settings page and a schedule.
 
 **Put the sensor** on the side of the panel, facing the room, and shield it from the panel's own light (a short black tube or heat-shrink). If it sees the panel, the display brightens itself and gets stuck at full brightness.
+
+![Sensor wiring](docs/sensor_wiring.svg)
 
 ### Phototransistor wiring (`LIGHT_SENSOR 2`)
 
@@ -54,13 +60,42 @@ All screens at a glance: [64×16](docs/sheet_64x16.png), [32×32](docs/sheet_32x
 - **Calibration:** `PT_UA_PER_LUX` (default 0.75 µA/lx). Only the shape of the curve matters for dimming, so tune by feel: if the clock gets bright too early, raise it.
 - On an ESP32-S3, use an ADC1 pin (GPIO1–10) for `PT_ADC_PIN`.
 
+### Indoor thermometer (`NTC_PIN 35`)
+
+```
+3V3 ── 100 kΩ 1 % ──┬──────── GPIO35  (ADC1, input-only)
+                    ├── NTC 100k ── GND
+                    └── 100 nF ──── GND   (at the ESP32 pin)
+```
+
+- **Why these values:** at 25 °C the NTC equals the 100 kΩ resistor, so GPIO35 sits at 1.65 V, the most accurate part of the ESP32's ADC. Indoor range 15–30 °C maps to about 2.0–1.5 V, roughly 37 mV per °C. The current is 16 µA, so the NTC heats itself by about 0.02 °C.
+- **Set `NTC_BETA`** to the B value from the listing or datasheet. 3950 is the common one ("NTC 100K 3950"); 4250 also exists. A wrong B (3950 assumed, 4250 fitted) is off by about 0.4 °C at 20 or 30 °C, and calibrating at room temperature removes most of that.
+- **Placement matters more than the electronics.** The ESP32 runs warm and the panel's LEDs warm the air above them. Put the NTC on a 10–20 cm twisted pair, below the clock and away from both, out of sunlight and not on an outside wall. Otherwise it reads 1–3 °C high.
+- **Calibration:** leave a trusted thermometer next to it for an hour, then move the **Calibration** slider on the settings page (±5 °C, 0.1 steps) until they agree. This also absorbs the ADC's offset and the tolerance of the 3.3 V regulator, which `NTC_VCC_MV` assumes is exactly 3.3 V.
+- **Faults:** `/status.txt` shows the voltage, resistance and raw temperature. It reports "open" when the NTC is disconnected (GPIO35 near 3.3 V) and "short" below 0.1 V; the slide is skipped until the reading is good again.
+
+### The minute slide
+
+At second 0 of each minute, if night mode is off and both temperatures are valid:
+
+| Time | Screen |
+|---|---|
+| 0–0.7 s | weather slides down, the house and indoor temperature come in from above |
+| 0.7–5.7 s | indoor temperature |
+| 5.7–6.4 s | indoor slides down, weather comes back from above |
+
+- The clock digits change at the same moment and never move. On a 32×32 panel the slide happens in the icon row only.
+- **Frame rate:** each animation frame is a separate BLE frame, sent as soon as the panel acknowledges the previous one. `/status.txt` shows the round trip as "write+ACK … ms avg". At around 150 ms the slide gets about 5 frames, which reads as a slide rather than a jump; `INDOOR_SLIDE_MS` makes it longer.
+- **No freezes:** weather and calendar downloads block the loop for 1–3 s, so they are held back from second 56 to second 8 of each minute.
+- **Settings page:** "Weather only" switches the slide off. Without a weather reading, the indoor temperature is shown on its own.
+
 ### VEML7700 (`LIGHT_SENSOR 1`)
 
 VIN→3V3, GND→GND, SDA→`I2C_SDA`, SCL→`I2C_SCL` (21/22 on a classic ESP32, 8/9 on an S3 DevKitC).
 
 ## Build and flash
 
-1. **Configure:** copy `src/clock_config.example.h` to `src/clock_config.h` and fill in Wi-Fi, `API_TOKEN` (a long random string), latitude/longitude and optionally `CAL_ICS_URL` and `LIGHT_SENSOR`. `clock_config.h` is git-ignored.
+1. **Configure:** copy `src/clock_config.example.h` to `src/clock_config.h` and fill in Wi-Fi, `API_TOKEN` (a long random string), latitude/longitude and optionally `CAL_ICS_URL`, `LIGHT_SENSOR` and `NTC_PIN`. `clock_config.h` is git-ignored.
 2. **Close the BK-Light app** on your phone. The panel accepts only one connection at a time.
 
 **Arduino IDE 2.x**
@@ -95,7 +130,7 @@ Watch the serial monitor (115200 baud):
 
 ## Settings page and API
 
-`http://clock.local/` sets the font, brightness (auto or manual, with the auto range), night mode (off, schedule or light sensor) and red night clock. Changes apply immediately and are saved to flash a few seconds later. `/status.txt` shows everything: link quality and drops, sensor readings, weather, calendar fetches, firmware slot, heap.
+`http://clock.local/` sets the font, brightness (auto or manual, with the auto range), night mode (off, schedule or light sensor), red night clock, and with an NTC the indoor slide and its calibration. Changes apply immediately and are saved to flash a few seconds later. `/status.txt` shows everything: link quality and drops, sensor readings, weather, calendar fetches, firmware slot, heap.
 
 Endpoints that put things on the screen need `API_TOKEN` (header `X-Token` or field `token`):
 
@@ -171,13 +206,14 @@ mkdir -p out && ./preview_tool out && python3 tools/validate_preview.py out prev
 g++ -std=c++17 -Isrc tools/ics_test.cpp src/ics.cpp src/calendar.cpp src/text.cpp -o ics_test && ./ics_test
 ```
 
-`validate_preview.py` decodes every PNG, compares it pixel by pixel with the framebuffer, checks each frame against a reference implementation of the BK-Light frame format, and draws the LED-style previews and sheets.
+The preview tool also renders the minute slide in 100 ms steps (`anim64x16_*`, `anim32x32_*`); `docs/indoor_slide_64x16.gif` is made from those frames. `validate_preview.py` decodes every PNG, compares it pixel by pixel with the framebuffer, checks each frame against a reference implementation of the BK-Light frame format, and draws the LED-style previews and sheets.
 
 ## How it works
 
 ```
 loop ─ Wi-Fi / mDNS ─ web server (/  /api/*  /status.txt  /msg  /calendar  /brightness  /update)
      ├ light sensor → AutoBright (log smoothing, fast up / slow down, hysteresis)
+     ├ NTC → 1 s samples, 30 s smoothing, display hysteresis; minute slide timeline
      ├ Open-Meteo every 15 min, calendar .ics every 15 min (HTTPS)
      └ build screen → render RGB framebuffer → pixels changed?
           → PNG (own fixed-Huffman deflate, ~150–300 B) → BK-Light frame → BLE write → ACK 05 00 02 00 03
@@ -193,6 +229,7 @@ A frame is only sent when the pixels change, plus a refresh every 10 minutes.
 | `src/png.*` | PNG encoder and BK-Light frame wrapper |
 | `src/ics.*`, `src/calendar*.*` | iCalendar parser, event store, link fetcher |
 | `src/autobright.h`, `src/light_sensor.*` | Brightness logic, VEML7700 and phototransistor drivers |
+| `src/indoor_temp.*`, `src/ntc.h`, `src/indoor_slide.h` | NTC thermometer, its maths, the minute slide timeline |
 | `src/settings.*`, `src/web_ui.h` | Saved settings and the settings page |
 | `src/weather.*` | Open-Meteo client |
 | `src/ota.*` | Wi-Fi updates with rollback |

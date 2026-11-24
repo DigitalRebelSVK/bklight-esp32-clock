@@ -32,6 +32,8 @@ RGB iconColor(char c) {
     case 'S': return {215, 235, 255};
     case 'L': return {255, 230, 0};
     case 'F': return {150, 150, 150};
+    case 'R': return {215, 75, 45};
+    case 'H': return {215, 200, 175};
     default: return {0, 0, 0};
   }
 }
@@ -234,8 +236,8 @@ struct TempLayout {
   int x;  // left edge of the first lit pixel (the minus sign or first digit)
 };
 
-TempLayout layoutTemp(int rightEdge, int leftLimit, int tenths) {
-  bool decimal = abs(tenths) < 100;
+TempLayout layoutTemp(int rightEdge, int leftLimit, int tenths, bool alwaysDecimal = false) {
+  bool decimal = alwaysDecimal ? abs(tenths) < 1000 : abs(tenths) < 100;
   struct Option { bool dec, ring; };
   const Option opts[4] = {{true, true}, {true, false}, {false, true}, {false, false}};
   TempLayout out;
@@ -260,6 +262,38 @@ int iconXBetween(int leftEdge, int tempX) {
   return leftEdge + (tempX - leftEdge - icons::kSize) / 2;
 }
 
+// One block next to the clock: weather (icon + outdoor temperature) or indoor
+// (house + indoor temperature). Temperature right-aligned; the icon centred in
+// the space left between leftEdge and the temperature (>= 1 px each side).
+void drawBlock(Framebuffer& fb, const Screen& s, int which, int leftEdge, int iconY, int tempY) {
+  if (which == Screen::kIndoor) {
+    if (!s.inValid) return;
+    TempLayout t = layoutTemp(fb.width(), leftEdge + 1 + icons::kSize + 1, s.inTenths, true);
+    drawIcon(fb, iconXBetween(leftEdge, t.x), iconY, icons::kHome);
+    drawTemp(fb, t, tempY, tempColor(s.inTenths));
+    return;
+  }
+  if (s.wxValid) {
+    TempLayout t = layoutTemp(fb.width(), leftEdge + 1 + icons::kSize + 1, s.tempTenths);
+    drawIcon(fb, iconXBetween(leftEdge, t.x), iconY, s.icon);
+    drawTemp(fb, t, tempY, tempColor(s.tempTenths));
+  } else {
+    text::draw(fb, fb.width() - text::width("--"), tempY, "--", kDim);
+  }
+}
+
+// The front block moved down by wxSlide/1000 of the block height, the other
+// one following from above, both clipped to rows [top, top + height).
+void drawSlidingBlocks(Framebuffer& fb, const Screen& s, int leftEdge, int top, int height, int iconY,
+                       int tempY) {
+  int dy = s.wxSlide <= 0 ? 0 : s.wxSlide >= 1000 ? height : (s.wxSlide * height + 500) / 1000;
+  int back = s.wxFront == Screen::kIndoor ? Screen::kOutdoor : Screen::kIndoor;
+  fb.clipRows(top, top + height);
+  if (dy < height) drawBlock(fb, s, s.wxFront, leftEdge, iconY + dy, tempY + dy);
+  if (dy > 0) drawBlock(fb, s, back, leftEdge, iconY + dy - height, tempY + dy - height);
+  fb.noClip();
+}
+
 int charsFor(int px) { return (px + 1) / text::kAdvance; }
 
 // ---- 64x16 ---------------------------------------------------------------------
@@ -273,16 +307,8 @@ void home64(const Screen& s, Framebuffer& fb) {
   }
   // The clock owns the left 30 px; H:MM is centred inside that slot.
   int clockEnd = drawClock(fb, s.clockFont, false, (30 - vw) / 2, y, s.timeValid, s.hh, s.mm, kClock);
-  if (s.wxValid) {
-    // Temperature right-aligned; the icon sits centred in whatever space is
-    // left between the clock and the temperature (at least 1 px each side).
-    TempLayout t = layoutTemp(fb.width(), clockEnd + 1 + icons::kSize + 1, s.tempTenths);
-    drawIcon(fb, iconXBetween(clockEnd, t.x), (fb.height() - icons::kSize) / 2, s.icon);
-    drawTemp(fb, t, 4, tempColor(s.tempTenths));
-  } else {
-    std::string t = "--";
-    text::draw(fb, fb.width() - text::width(t), 4, t, kDim);
-  }
+  // The weather/indoor block owns everything right of the clock, full height.
+  drawSlidingBlocks(fb, s, clockEnd, 0, fb.height(), (fb.height() - icons::kSize) / 2, 4);
 }
 
 // Line 1: time label in amber followed by the start of the title; line 2: rest.
@@ -327,13 +353,9 @@ void home32(const Screen& s, Framebuffer& fb) {
   }
   drawClock(fb, s.clockFont, true, x, 0, s.timeValid, s.hh, s.mm, kClock);
   int iy = m.h + 2;
-  if (s.wxValid) {
-    TempLayout t = layoutTemp(fb.width(), 1 + icons::kSize + 1, s.tempTenths);
-    drawIcon(fb, iconXBetween(0, t.x), iy, s.icon);
-    drawTemp(fb, t, iy + 1, tempColor(s.tempTenths));
-  } else {
-    text::draw(fb, fb.width() - text::width("--"), iy + 1, "--", kDim);
-  }
+  // The block is the icon row: clipped there so a slide never touches the
+  // clock above or the next-event hint below.
+  drawSlidingBlocks(fb, s, 0, iy, icons::kSize, iy, iy + 1);
   if (!s.nextLabel.empty() && iy + icons::kSize <= 25) {
     int tw = text::width(s.nextLabel);
     text::draw(fb, (fb.width() - tw) / 2, 24, s.nextLabel, kAccent);

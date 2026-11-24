@@ -23,6 +23,18 @@ struct Screen {
   int tempTenths = 0;  // 0.1 degC units
   int icon = 0;        // icons::Id
 
+  // Indoor temperature (NTC), shown with a house icon in the same spot as the
+  // weather. Always one decimal when it fits (21.5).
+  bool inValid = false;
+  int inTenths = 0;
+
+  // Which block sits next to the clock, and how far it has slid away:
+  // wxFront = kOutdoor/kIndoor; wxSlide 0..1000 = that block has moved down by
+  // this fraction of the block height while the other one comes in from above.
+  enum Block { kOutdoor, kIndoor };
+  int wxFront = kOutdoor;
+  int wxSlide = 0;
+
   // Home screen hint on 32x32: start time of the next event ("18:30"), may be empty.
   std::string nextLabel;
 

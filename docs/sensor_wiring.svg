@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 470" width="820" height="470" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#222"/>
+    </marker>
+    <marker id="light" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c98a00"/>
+    </marker>
+    <g id="gnd">
+      <line x1="-14" y1="0" x2="14" y2="0" stroke="#222" stroke-width="2.2"/>
+      <line x1="-9" y1="6" x2="9" y2="6" stroke="#222" stroke-width="2.2"/>
+      <line x1="-4" y1="12" x2="4" y2="12" stroke="#222" stroke-width="2.2"/>
+    </g>
+  </defs>
+  <style>
+    .w{stroke:#222;stroke-width:2.2;fill:none;stroke-linecap:round}
+    .part{stroke:#222;stroke-width:2.2;fill:#fff}
+    .lbl{font-size:14px;fill:#222}
+    .val{font-size:13px;fill:#555}
+    .net{font-size:14px;font-weight:700;fill:#1f5fa8}
+    .h{font-size:17px;font-weight:700;fill:#222}
+    .new{fill:#c0392b}
+    .note{font-size:12.5px;fill:#555}
+    .dot{fill:#222}
+  </style>
+  <rect width="820" height="470" fill="#fff"/>
+
+  <!-- ===================== A: NTC ===================== -->
+  <text x="30" y="32" class="h"><tspan class="new">NEW</tspan> Indoor thermometer, NTC 100k</text>
+
+  <!-- 3V3 flag -->
+  <text x="190" y="62" class="net" text-anchor="middle">3V3</text>
+  <line x1="176" y1="70" x2="204" y2="70" class="w"/>
+  <line x1="190" y1="70" x2="190" y2="100" class="w"/>
+
+  <!-- R1 -->
+  <rect x="180" y="100" width="20" height="60" class="part"/>
+  <text x="212" y="126" class="lbl">R1 100 kΩ</text>
+  <text x="212" y="143" class="val">1 % metal film</text>
+  <line x1="190" y1="160" x2="190" y2="200" class="w"/>
+
+  <!-- node A -->
+  <circle cx="190" cy="200" r="4" class="dot"/>
+  <line x1="190" y1="200" x2="70" y2="200" class="w"/>
+  <text x="62" y="196" class="net" text-anchor="end">GPIO35</text>
+  <text x="62" y="214" class="val" text-anchor="end">ADC1</text>
+
+  <!-- NTC (IEC thermistor: resistor body + bent diagonal) -->
+  <line x1="190" y1="200" x2="190" y2="235" class="w"/>
+  <rect x="180" y="235" width="20" height="60" class="part"/>
+  <polyline points="166,309 174,309 206,223" class="w"/>
+  <text x="158" y="316" class="lbl" text-anchor="end">−ϑ</text>
+  <text x="166" y="256" class="lbl" text-anchor="end">NTC 100 kΩ</text>
+  <text x="166" y="273" class="val" text-anchor="end">B 3950 (check yours)</text>
+  <line x1="190" y1="295" x2="190" y2="350" class="w"/>
+
+  <!-- C1 -->
+  <line x1="190" y1="200" x2="320" y2="200" class="w"/>
+  <circle cx="320" cy="200" r="0"/>
+  <line x1="320" y1="200" x2="320" y2="300" class="w"/>
+  <line x1="306" y1="300" x2="334" y2="300" class="w"/>
+  <line x1="306" y1="309" x2="334" y2="309" class="w"/>
+  <line x1="320" y1="309" x2="320" y2="350" class="w"/>
+  <text x="342" y="300" class="lbl">C1</text>
+  <text x="342" y="317" class="val">100 nF</text>
+
+  <!-- GND -->
+  <line x1="190" y1="350" x2="320" y2="350" class="w"/>
+  <circle cx="255" cy="350" r="0"/>
+  <line x1="255" y1="350" x2="255" y2="362" class="w"/>
+  <use href="#gnd" x="255" y="362"/>
+  <text x="280" y="378" class="net">GND</text>
+
+  <text x="30" y="414" class="note">25 °C → 1.65 V on GPIO35 (mid-range of the ADC).</text>
+  <text x="30" y="432" class="note">−37 mV per °C; 16 µA through the NTC, self-heating ≈ 0.02 °C.</text>
+  <text x="30" y="450" class="note">C1 right at the ESP32 pin. NTC on a 10–20 cm twisted pair.</text>
+
+  <!-- divider -->
+  <line x1="410" y1="20" x2="410" y2="455" stroke="#ccc" stroke-width="1.5" stroke-dasharray="5 6"/>
+
+  <!-- ===================== B: phototransistor ===================== -->
+  <text x="440" y="32" class="h">Light sensor, 3DU33 (as wired)</text>
+
+  <!-- 3V3 flag + collector -->
+  <text x="610" y="62" class="net" text-anchor="middle">3V3</text>
+  <line x1="596" y1="70" x2="624" y2="70" class="w"/>
+  <line x1="610" y1="70" x2="610" y2="132" class="w"/>
+
+  <!-- Q1 phototransistor (no base lead) -->
+  <circle cx="598" cy="150" r="26" class="part"/>
+  <line x1="588" y1="134" x2="588" y2="166" class="w"/>
+  <line x1="588" y1="143" x2="610" y2="132" class="w"/>
+  <line x1="588" y1="157" x2="608" y2="168" class="w" marker-end="url(#arr)"/>
+  <line x1="610" y1="168" x2="610" y2="225" class="w"/>
+  <line x1="540" y1="112" x2="566" y2="136" stroke="#c98a00" stroke-width="2" marker-end="url(#light)"/>
+  <line x1="532" y1="128" x2="558" y2="152" stroke="#c98a00" stroke-width="2" marker-end="url(#light)"/>
+  <text x="636" y="140" class="lbl">Q1 3DU33</text>
+  <text x="636" y="157" class="val">C top, E bottom</text>
+
+  <!-- node B -->
+  <circle cx="610" cy="225" r="4" class="dot"/>
+  <line x1="610" y1="225" x2="480" y2="225" class="w"/>
+  <text x="472" y="221" class="net" text-anchor="end">GPIO34</text>
+  <text x="472" y="239" class="val" text-anchor="end">ADC1</text>
+
+  <!-- R3 10k to GPIO27 hanging from the GPIO34 net -->
+  <circle cx="530" cy="225" r="4" class="dot"/>
+  <line x1="530" y1="225" x2="530" y2="255" class="w"/>
+  <rect x="520" y="255" width="20" height="55" class="part"/>
+  <text x="508" y="280" class="lbl" text-anchor="end">R3</text>
+  <text x="508" y="297" class="val" text-anchor="end">10 kΩ</text>
+  <line x1="530" y1="310" x2="530" y2="335" class="w"/>
+  <text x="530" y="352" class="net" text-anchor="middle">GPIO27</text>
+  <text x="530" y="369" class="val" text-anchor="middle">range switch</text>
+
+  <!-- R2 100k -->
+  <line x1="610" y1="225" x2="610" y2="255" class="w"/>
+  <rect x="600" y="255" width="20" height="55" class="part"/>
+  <text x="628" y="280" class="lbl">R2</text>
+  <text x="628" y="297" class="val">100 kΩ</text>
+  <line x1="610" y1="310" x2="610" y2="350" class="w"/>
+
+  <!-- C2 1uF -->
+  <line x1="610" y1="225" x2="730" y2="225" class="w"/>
+  <line x1="730" y1="225" x2="730" y2="290" class="w"/>
+  <line x1="716" y1="290" x2="744" y2="290" class="w"/>
+  <line x1="716" y1="299" x2="744" y2="299" class="w"/>
+  <line x1="730" y1="299" x2="730" y2="350" class="w"/>
+  <text x="752" y="290" class="lbl">C2</text>
+  <text x="752" y="307" class="val">1 µF</text>
+
+  <!-- GND -->
+  <line x1="610" y1="350" x2="730" y2="350" class="w"/>
+  <line x1="670" y1="350" x2="670" y2="362" class="w"/>
+  <use href="#gnd" x="670" y="362"/>
+  <text x="695" y="378" class="net">GND</text>
+
+  <text x="440" y="414" class="note">GPIO27 floating: 100 kΩ load, about 1–33 lx.</text>
+  <text x="440" y="432" class="note">GPIO27 driven LOW: 9.1 kΩ load, about 22–370 lx.</text>
+  <text x="440" y="450" class="note">Only ADC1 pins (GPIO32–39) work while Wi-Fi is on.</text>
+</svg>

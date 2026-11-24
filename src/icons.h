@@ -1,12 +1,12 @@
 // 10x10 weather icons as ASCII art - edit freely, colours are mapped in render.cpp.
 //   .  off            Y sun          M moon        W light cloud
 //   G  grey cloud     D dark cloud   B rain        S snow
-//   L  lightning      F fog
+//   L  lightning      F fog          R roof        H wall
 #pragma once
 
 namespace icons {
 constexpr int kSize = 10;
-enum Id { kSun, kMoon, kPartlyDay, kPartlyNight, kCloud, kFog, kDrizzle, kRain, kSnow, kThunder, kCount };
+enum Id { kSun, kMoon, kPartlyDay, kPartlyNight, kCloud, kFog, kDrizzle, kRain, kSnow, kThunder, kHome, kCount };
 
 static const char* const kArt[kCount][kSize] = {
   {  // kSun
@@ -128,6 +128,18 @@ static const char* const kArt[kCount][kSize] = {
     "..LLLL....",
     "....LL....",
     "...LL.....",
+  },
+  {  // kHome - indoor temperature
+    "....RR....",
+    "...RRRR...",
+    "..RRRRRR..",
+    ".RRRRRRRR.",
+    "RRRRRRRRRR",
+    ".HHHHHHHH.",
+    ".HYYHHHHH.",
+    ".HYYHH..H.",
+    ".HHHHH..H.",
+    ".HHHHH..H.",
   },
 };
 }  // namespace icons

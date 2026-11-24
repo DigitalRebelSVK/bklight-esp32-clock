@@ -236,6 +236,7 @@ bool PanelBLE::handshake() {
 bool PanelBLE::sendFrame(const uint8_t* frame, size_t len) {
   if (!connected() && !connect()) return false;
   flushNotifs();
+  uint32_t t0 = millis();
   // Write-with-response: the repo found it much more stable on ACT1025.
   if (!write(frame, len, true)) {
     disconnect("frame write failed");
@@ -255,6 +256,9 @@ bool PanelBLE::sendFrame(const uint8_t* frame, size_t len) {
   }
   missedInARow_ = 0;
   ++frames_;
+  uint32_t ms = millis() - t0;
+  stats_.frameMsAvg = stats_.frameMsAvg ? (stats_.frameMsAvg * 7 + ms) / 8 : ms;
+  if (ms > stats_.frameMsMax) stats_.frameMsMax = ms;
 #if BLE_SEND_VALIDATION
   if (++sinceValidation_ >= 30) {
     static const uint8_t validation[5] = {0x05, 0x00, 0x00, 0x01, 0x00};

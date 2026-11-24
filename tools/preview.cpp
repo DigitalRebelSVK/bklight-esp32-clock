@@ -3,6 +3,7 @@
 //       src/png.cpp src/calendar.cpp -o preview_tool && ./preview_tool preview
 // Writes panel-size PNGs (made by the firmware's own encoder) and BK frames.
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,8 @@
 #include "../src/autobright.h"
 #include "../src/calendar.h"
 #include "../src/icons.h"
+#include "../src/indoor_slide.h"
+#include "../src/ntc.h"
 #include "../src/png.h"
 #include "../src/render.h"
 #include "../src/settings.h"
@@ -38,6 +41,9 @@ static void emit(const std::string& dir, const std::string& name, const Framebuf
   writeFile(dir + "/rgb_" + name + ".bin", fb.data(), fb.bytes());
   printf("%-28s png %4zu B  frame %4zu B  (raw %zu B)\n", name.c_str(), n, fn, fb.bytes());
 }
+
+static constexpr int INDOOR_SLIDE_MS_PREVIEW = 700;
+static constexpr int INDOOR_HOLD_MS_PREVIEW = 5000;
 
 static Screen base(int hh, int mm, int tenths, int wmo, bool day, int font = kFontSlim) {
   Screen s;
@@ -97,6 +103,72 @@ static void scenarios(const std::string& dir, int w, int h) {
 
   s = Screen();  // no NTP / no weather yet
   renderScreen(s, fb); emit(dir, sz + "_home_booting", fb);
+
+  // Indoor temperature, at rest
+  s = base(21, 47, -32, 2, false);
+  s.inValid = true;
+  s.inTenths = 215;
+  s.wxFront = Screen::kIndoor;
+  renderScreen(s, fb); emit(dir, sz + "_indoor", fb);
+  s.inTenths = 268;
+  renderScreen(s, fb); emit(dir, sz + "_indoor_warm", fb);
+
+  // End of a slide == the other block at rest (no jump when the slide ends)
+  Framebuffer a(w, h), b(w, h);
+  for (int front = 0; front < 2; ++front) {
+    Screen x = base(21, 47, -32, 2, false);
+    x.inValid = true;
+    x.inTenths = 215;
+    x.wxFront = front;
+    x.wxSlide = 1000;
+    Screen y = x;
+    y.wxFront = 1 - front;
+    y.wxSlide = 0;
+    renderScreen(x, a);
+    renderScreen(y, b);
+    assert(memcmp(a.data(), b.data(), a.bytes()) == 0);
+  }
+
+  // The minute-change animation, 100 ms apart (the clock sends a frame as soon
+  // as the panel ACKs the previous one, so the real rate depends on the panel).
+  for (int ms = 0; ms <= 2 * INDOOR_SLIDE_MS_PREVIEW + INDOOR_HOLD_MS_PREVIEW + 300; ms += 100) {
+    Screen x = base(21, 48, -32, 2, false);
+    x.inValid = true;
+    x.inTenths = 215;
+    SlideState st = slideAt(ms, true, INDOOR_SLIDE_MS_PREVIEW, INDOOR_HOLD_MS_PREVIEW);
+    x.wxFront = st.front;
+    x.wxSlide = st.slide;
+    char nm[48];
+    snprintf(nm, sizeof(nm), "anim%s_%05d", sz.c_str(), ms);
+    renderScreen(x, fb); emit(dir, nm, fb);
+  }
+}
+
+static void testIndoor() {
+  // NTC maths: round trip through the divider, -20..60 degC
+  for (int c = -20; c <= 60; c += 5) {
+    float r = ntc::ohmsAt((float)c, 100000.0f, 3950.0f);
+    float mv = ntc::nodeMv(r, 3300.0f, 100000.0f);
+    float back = ntc::celsius(ntc::ohms(mv, 3300.0f, 100000.0f), 100000.0f, 3950.0f);
+    assert(fabsf(back - c) < 0.01f);
+  }
+  assert(fabsf(ntc::celsius(100000.0f, 100000.0f, 3950.0f) - 25.0f) < 0.001f);
+  assert(fabsf(ntc::nodeMv(100000.0f, 3300.0f, 100000.0f) - 1650.0f) < 0.01f);
+  assert(ntc::ohms(3300.0f, 3300.0f, 100000.0f) < 0);  // open circuit
+  // Slide timeline
+  SlideState st = slideAt(0, true, 700, 5000);
+  assert(st.busy && st.front == Screen::kOutdoor && st.slide == 0);
+  st = slideAt(350, true, 700, 5000);
+  assert(st.slide == 500);
+  st = slideAt(700, true, 700, 5000);
+  assert(st.front == Screen::kIndoor && st.slide == 0 && st.busy);
+  st = slideAt(6050, true, 700, 5000);
+  assert(st.front == Screen::kIndoor && st.slide == 500);
+  st = slideAt(6400, true, 700, 5000);
+  assert(!st.busy && st.front == Screen::kOutdoor && st.slide == 0);
+  st = slideAt(300, false, 700, 5000);
+  assert(!st.busy && st.slide == 0);
+  printf("indoor ok\n");
 }
 
 static void testCalendar() {
@@ -161,6 +233,7 @@ int main(int argc, char** argv) {
   testCalendar();
   testWrap();
   testAutoBright();
+  testIndoor();
   scenarios(dir, 64, 16);
   scenarios(dir, 32, 32);
   assert(tempLabel(97, true) == "9.7" && tempLabel(-13, true) == "-1.3");
@@ -174,6 +247,9 @@ int main(int argc, char** argv) {
   assert(!settingsSet(cfg, "clockFont", kClockFontCount));
   assert(settingsSet(cfg, "clockFont", kFontSlim) && settingsGet(cfg, "clockFont") == kFontSlim);
   assert(!settingsSet(cfg, "nope", 1));
+  assert(cfg.indoorSlide == 1 && cfg.indoorOffset == 50);
+  assert(settingsSet(cfg, "indoorOffset", 42) && settingsGet(cfg, "indoorOffset") == 42);
+  assert(!settingsSet(cfg, "indoorOffset", 101));
   for (int i = 0; i < kSettingCount; ++i) assert(settingsGet(cfg, kSettingKeys[i]) >= 0);
   printf("settings ok\n");
   assert(text::upper("žofia ľubka čšťďňôáéíúý") == "ŽOFIA ĽUBKA ČŠŤĎŇÔÁÉÍÚÝ");

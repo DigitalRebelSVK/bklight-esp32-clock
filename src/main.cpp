@@ -1,11 +1,12 @@
 // Living-room clock: ESP32 -> BK-Light BLE LED panel.
-// Clock (NTP) + Open-Meteo weather + calendar pushed from an iPhone Shortcut,
+// Clock (NTP) + Open-Meteo weather + .ics calendar + indoor NTC thermometer,
 // brightness / night mode / clock font editable on http://clock.local/.
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ESPmDNS.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <sys/time.h>
 #include <time.h>
 
 #include "autobright.h"
@@ -13,6 +14,8 @@
 #include "calendar_feed.h"
 #include "config_defaults.h"
 #include "fb.h"
+#include "indoor_slide.h"
+#include "indoor_temp.h"
 #include "light_sensor.h"
 #include "ota.h"
 #include "panel_ble.h"
@@ -28,6 +31,7 @@ namespace {
 PanelBLE panel;
 Weather weather;
 LightSensor sensor;
+IndoorTemp indoor;
 Calendar calendar;
 CalendarFeed calendarFeed;
 WebServer server(80);
@@ -148,6 +152,32 @@ void markSettingsChanged() {
   settingsChangedMs = millis();
 }
 
+// Indoor temperature as displayed (offset from the settings page applied).
+bool indoorValid() { return indoor.valid(); }
+int indoorTenths() { return indoor.shownTenths((int)settings.indoorOffset - 50); }
+
+// Where the once-a-minute indoor slide is right now. Daytime only, and only
+// when both temperatures are there to slide between.
+SlideState currentSlide(bool night) {
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  struct tm t;
+  localtime_r(&tv.tv_sec, &t);
+  bool on = settings.indoorSlide && !night && t.tm_year + 1900 >= 2024 && indoorValid() && weather.valid();
+  return slideAt(t.tm_sec * 1000 + (int)(tv.tv_usec / 1000), on, INDOOR_SLIDE_MS, INDOOR_HOLD_S * 1000);
+}
+
+// Downloads block the loop for 1-3 s; keep them out of the animation window
+// and the last seconds before it, so the slide never freezes halfway.
+bool networkQuietTime(bool night) {
+  if (!indoor.enabled() || !settings.indoorSlide || night) return true;
+  time_t now = time(nullptr);
+  struct tm t;
+  localtime_r(&now, &t);
+  int sec = t.tm_sec;
+  return !(sec >= 56 || sec < (2 * INDOOR_SLIDE_MS + INDOOR_HOLD_S * 1000) / 1000 + 2);
+}
+
 // ---- web: settings page + JSON API --------------------------------------------
 String uptimeText() {
   uint32_t s = millis() / 1000;
@@ -173,7 +203,15 @@ void sendState() {
     int tenths = (int)lroundf(weather.tempExact() * 10);
     st["temp"] = tempLabel(tenths, abs(tenths) < 100);
   }
+  st["ntc"] = indoor.enabled();
+  if (indoorValid()) {
+    st["indoor"] = tempLabel(indoorTenths(), true);
+    st["indoorRaw"] = serialized(String(indoor.rawCelsius(), 2));
+  } else if (indoor.enabled()) {
+    st["indoorFault"] = indoor.fault();
+  }
   st["panel"] = panel.connected();
+  st["frameMs"] = panel.stats().frameMsAvg;
   st["sensor"] = sensor.present();
   st["lux"] = serialized(String(autoBright.smoothedLux(), 1));
   st["level"] = lastLevel;
@@ -267,9 +305,10 @@ void handleStatusText() {
   s += "wifi:       " + WiFi.localIP().toString() + "  RSSI " + String(WiFi.RSSI()) + " dBm\n";
   s += "panel:      " + String(panel.connected() ? "connected" : "disconnected");
   if (panel.lastError().length()) s += "  (last error: " + panel.lastError() + ")";
-  s += "\n            frames sent " + String(panel.framesSent()) + ", last frame " + String(lastFrameLen) +
-       " B, last notify " + panel.lastNotify() + "\n";
   const PanelStats& ps = panel.stats();
+  s += "\n            frames sent " + String(panel.framesSent()) + ", last frame " + String(lastFrameLen) +
+       " B, write+ACK " + String(ps.frameMsAvg) + " ms avg / " + String(ps.frameMsMax) + " ms max, last notify " +
+       panel.lastNotify() + "\n";
   s += "            connects " + String(ps.connects) + ", drops " + String(ps.drops) + ", missed ACKs " +
        String(ps.missedAcks) + "\n";
   if (ps.drops)
@@ -286,6 +325,19 @@ void handleStatusText() {
        (settings.hwBrightness ? String("  [panel command]")
                               : "  [pixel dimming " + String((int)lroundf(pixelFactor(lastLevel) * 100)) + " %]") +
        "\n";
+  s += "indoor:     ";
+  if (!indoor.enabled()) {
+    s += "no thermometer (NTC_PIN -1)\n";
+  } else if (!indoorValid()) {
+    s += String(*indoor.fault() ? indoor.fault() : "waiting for first reading") + "  (" +
+         String(indoor.millivolts(), 0) + " mV)\n";
+  } else {
+    int off = (int)settings.indoorOffset - 50;
+    s += String(tempLabel(indoorTenths(), true).c_str()) + " C  (sensor " + String(indoor.rawCelsius(), 2) +
+         " C, offset " + String(off / 10.0f, 1) + ", " + String(indoor.millivolts(), 0) + " mV, " +
+         String(indoor.ohms() / 1000.0f, 1) + " kOhm)" + (settings.indoorSlide ? "  [slide every minute]" : "") +
+         "\n";
+  }
   s += "font:       " + String(clockFontName(settings.clockFont)) + "\n";
   s += "weather:    " + weather.status() + (weather.valid() ? "" : "  [stale]") + "\n";
   s += "calendar:   " + String(calendar.size()) + " stored" +
@@ -339,6 +391,15 @@ Screen buildScreen(bool night) {
   s.wxValid = weather.valid();
   s.tempTenths = (int)lroundf(weather.tempExact() * 10);
   s.icon = iconForWmo(weather.code(), weather.isDay());
+  s.inValid = indoorValid();
+  if (s.inValid) s.inTenths = indoorTenths();
+  if (!s.wxValid && s.inValid) {
+    s.wxFront = Screen::kIndoor;  // no weather yet: show what we have
+  } else {
+    SlideState sl = currentSlide(night);
+    s.wxFront = sl.front;
+    s.wxSlide = sl.slide;
+  }
 
   uint32_t now = millis();
   bool msgActive = messageUntil && (int32_t)(messageUntil - now) > 0;
@@ -470,6 +531,7 @@ void setup() {
 
   if (sensor.begin()) Serial.printf("[light] %s\n", sensor.name());
   else Serial.println("[light] no sensor - brightness from the settings page");
+  if (indoor.begin()) Serial.printf("[indoor] NTC on GPIO%d\n", NTC_PIN);
 
   panel.begin(PANEL_MAC, PANEL_NAME_PREFIX);
 
@@ -501,9 +563,13 @@ void loop() {
   server.handleClient();
   ota::loop(wifiUp);
   updateLight();
-  weather.update(wifiUp);
-  calendarFeed.update(wifiUp, calendar);
+  indoor.poll();
+  bool quiet = networkQuietTime(lastNight);
+  weather.update(wifiUp && quiet);
+  calendarFeed.update(wifiUp && quiet, calendar);
   pushToPanel();
   saveSettingsIfIdle();
-  delay(20);
+  // While sliding, send the next frame as soon as the panel ACKs; otherwise idle
+  // (a busy loop warms the ESP32, and with it a nearby NTC).
+  delay(currentSlide(lastNight).slide > 0 ? 1 : 20);
 }

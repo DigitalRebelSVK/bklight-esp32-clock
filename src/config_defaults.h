@@ -69,6 +69,33 @@
 #define OTA_PASSWORD API_TOKEN
 #endif
 
+// ---- Indoor thermometer (NTC) --------------------------------------------------
+// 3V3 -- NTC_R_SERIES -- NTC_PIN -- NTC -- GND, 100 nF from NTC_PIN to GND.
+// NTC_PIN must be an ADC1 pin (classic ESP32: 32-39; GPIO35 is free here).
+// -1 = no indoor thermometer.
+#ifndef NTC_PIN
+#define NTC_PIN -1
+#endif
+#ifndef NTC_R_SERIES
+#define NTC_R_SERIES 100000.0f  // the fixed resistor, ohms (1 % metal film)
+#endif
+#ifndef NTC_R25
+#define NTC_R25 100000.0f  // NTC resistance at 25 degC
+#endif
+#ifndef NTC_BETA
+#define NTC_BETA 3950.0f  // B25/50 from the NTC's datasheet (3950 and 4250 are common)
+#endif
+#ifndef NTC_VCC_MV
+#define NTC_VCC_MV 3300.0f  // divider supply; the offset on the settings page absorbs its error
+#endif
+// The once-a-minute slide: duration of each slide and how long indoor stays.
+#ifndef INDOOR_SLIDE_MS
+#define INDOOR_SLIDE_MS 700
+#endif
+#ifndef INDOOR_HOLD_S
+#define INDOOR_HOLD_S 5
+#endif
+
 // ---- Calendar from a public link ----------------------------------------------
 // iCloud: Calendar -> share the calendar -> "Public Calendar" -> copy link
 // (webcal://... is fine). Leave empty to use only the /calendar push endpoint.

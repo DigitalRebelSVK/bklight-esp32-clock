@@ -13,6 +13,8 @@ struct PanelStats {
   String lastCause;            // human-readable cause of the last drop
   uint32_t lastDropMs = 0;     // millis() of the last drop
   uint32_t lastReconnectMs = 0;  // how long the last reconnect took
+  uint32_t frameMsAvg = 0;     // write + ACK round trip, smoothed (sets animation smoothness)
+  uint32_t frameMsMax = 0;
 };
 
 class PanelBLE {

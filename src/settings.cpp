@@ -31,6 +31,8 @@ const Field kFields[] = {
     {"hwBrightness", &Settings::hwBrightness, 0, 1},
     {"autoMin", &Settings::autoMin, 0, 100},
     {"autoMax", &Settings::autoMax, 0, 100},
+    {"indoorSlide", &Settings::indoorSlide, 0, 1},
+    {"indoorOffset", &Settings::indoorOffset, 0, 100},
 };
 constexpr int kFieldCount = sizeof(kFields) / sizeof(kFields[0]);
 
@@ -43,7 +45,8 @@ const Field* find(const char* key) {
 
 const char* const kSettingKeys[] = {"clockFont", "brightMode", "dayLevel",  "nightLevel",
                                     "nightMode", "nightStart", "nightEnd",  "nightRed",
-                                    "hwBrightness", "autoMin", "autoMax"};
+                                    "hwBrightness", "autoMin", "autoMax", "indoorSlide",
+                                    "indoorOffset"};
 const int kSettingCount = kFieldCount;
 
 void settingsDefaults(Settings& s) {
@@ -58,6 +61,8 @@ void settingsDefaults(Settings& s) {
   s.hwBrightness = USE_HW_BRIGHTNESS;
   s.autoMin = BRIGHT_MIN;
   s.autoMax = BRIGHT_MAX;
+  s.indoorSlide = 1;
+  s.indoorOffset = 50;
 }
 
 bool settingsSet(Settings& s, const char* key, int value) {
@@ -77,9 +82,12 @@ void settingsLoad(Settings& s) {
   settingsDefaults(s);
   Preferences p;
   if (!p.begin("lrclock", true)) return;
-  if (p.getUChar("ver", 0) == kVersion && p.getBytesLength("s") == sizeof(Settings)) {
-    Settings stored;
-    p.getBytes("s", &stored, sizeof(stored));
+  size_t n = p.getBytesLength("s");
+  // A record saved by an older firmware is shorter: take what it has, the
+  // fields added since then keep their defaults.
+  if (p.getUChar("ver", 0) == kVersion && n > 0 && n <= sizeof(Settings)) {
+    Settings stored = s;
+    p.getBytes("s", &stored, n);
     // Re-validate every field so a corrupted blob can't break the clock.
     bool ok = true;
     for (const Field& f : kFields) {

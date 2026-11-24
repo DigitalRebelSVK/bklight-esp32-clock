@@ -93,6 +93,15 @@
 #define I2C_SDA 21       // VEML7700: classic ESP32 21/22, ESP32-S3 DevKitC 8/9
 #define I2C_SCL 22
 
+// ---- Indoor thermometer (optional) ---------------------------------------------
+// 100k NTC: 3V3 -- 100k -- NTC_PIN -- NTC -- GND, plus 100 nF from NTC_PIN to
+// GND. See README for the schematic. -1 = none. On a classic ESP32, GPIO35 is
+// a free ADC1 pin (ADC2 pins don't work while Wi-Fi is on).
+#define NTC_PIN -1
+#define NTC_R_SERIES 100000.0f  // the fixed resistor
+#define NTC_R25 100000.0f       // NTC at 25 degC
+#define NTC_BETA 3950.0f        // B value from the NTC's listing/datasheet
+
 #define LUX_DIM 1.0f        // <= this: minimum brightness
 #define LUX_BRIGHT 300.0f   // >= this: maximum brightness
 #define BRIGHT_MIN 4        // panel units 0..100

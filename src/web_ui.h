@@ -52,18 +52,27 @@ a{color:#ffb35c}
 <div class="seg" data-k="nightRed" data-o="Normal screen|Red clock only"></div>
 </fieldset>
 
+<fieldset id="inBox" class="hide"><legend>Indoor temperature</legend>
+<div class="seg" data-k="indoorSlide" data-o="Weather only|Slide to indoor every minute"></div>
+<p class="note">Daytime only: at each new minute the weather slides down to the indoor temperature for a few seconds, then back.</p>
+<div class="row"><span>Calibration</span><input type="range" min="0" max="100" data-k="indoorOffset" data-f="off"><span class="v"></span></div>
+<p class="note" id="inNote"></p>
+</fieldset>
+
 <p class="note">Changes apply instantly and are saved on the clock. <a href="/status.txt">Plain status</a></p>
 
 <script>
 let S={}, st={}, dragging=null, timer=null;
 const q=s=>document.querySelectorAll(s);
+// slider value as shown: plain number, or the indoor offset in degC (50 = 0.0)
+const fmt=(r,v)=>r.dataset.f==='off'?((v>50?'+':'')+((v-50)/10).toFixed(1)+' °C'):v;
 
 q('select').forEach(sel=>{for(let h=0;h<24;h++){const o=document.createElement('option');o.value=h;o.textContent=(h<10?'0':'')+h+':00';sel.appendChild(o);}});
 q('.seg').forEach(seg=>{seg.dataset.o.split('|').forEach((label,i)=>{const b=document.createElement('button');b.textContent=label;b.onclick=()=>send(seg.dataset.k,i);seg.appendChild(b);});});
 q('input[type=range]').forEach(r=>{
   r.addEventListener('pointerdown',()=>dragging=r);
   r.addEventListener('pointerup',()=>{dragging=null;});
-  r.addEventListener('input',()=>{r.nextElementSibling.textContent=r.value;S[r.dataset.k]=+r.value;
+  r.addEventListener('input',()=>{r.nextElementSibling.textContent=fmt(r,r.value);S[r.dataset.k]=+r.value;
     clearTimeout(timer);timer=setTimeout(()=>post(r.dataset.k,r.value),120);});
   r.addEventListener('change',()=>{dragging=null;post(r.dataset.k,r.value);});
 });
@@ -80,7 +89,7 @@ function draw(){
     if(!sensor&&k==='brightMode')v=1;            // no sensor: effectively manual
     if(!sensor&&k==='nightMode'&&v===2)v=1;      // ...and night falls back to the schedule
     [...seg.children].forEach((b,i)=>b.classList.toggle('on',i===v));});
-  q('input[type=range]').forEach(r=>{if(r===dragging)return;r.value=S[r.dataset.k];r.nextElementSibling.textContent=S[r.dataset.k];});
+  q('input[type=range]').forEach(r=>{if(r===dragging)return;r.value=S[r.dataset.k];r.nextElementSibling.textContent=fmt(r,S[r.dataset.k]);});
   q('select').forEach(sel=>{if(document.activeElement!==sel)sel.value=S[sel.dataset.k];});
   document.querySelector('[data-k=brightMode]').children[0].disabled=!sensor;
   document.querySelector('[data-k=nightMode]').children[2].disabled=!sensor;
@@ -88,9 +97,14 @@ function draw(){
   document.getElementById('dayRow').classList.toggle('hide',auto);
   document.getElementById('noSensor').classList.toggle('hide',sensor);
   document.getElementById('sched').classList.toggle('hide',S.nightMode!==1&&!(S.nightMode===2&&!sensor));
+  document.getElementById('inBox').classList.toggle('hide',!st.ntc);
+  document.getElementById('inNote').innerHTML=st.indoor!==undefined
+    ?'Sensor reads <b>'+st.indoorRaw+' °C</b> before calibration. Put a trusted thermometer next to it for an hour, then move the slider until the clock agrees.'
+    :(st.ntc?'<b style="color:#f66">Thermometer: '+(st.indoorFault||'no reading yet')+'</b>':'');
   const p=[];
   p.push('<b>'+(st.time||'--:--')+'</b>');
-  if(st.temp!==undefined)p.push('<b>'+st.temp+' °C</b>');
+  if(st.temp!==undefined)p.push('<b>'+st.temp+' °C</b> out');
+  if(st.indoor!==undefined)p.push('<b>'+st.indoor+' °C</b> in');
   p.push('panel '+(st.panel?'connected':'<b style="color:#f66">offline</b>'));
   p.push('brightness <b>'+st.level+'</b>'+(S.hwBrightness===0?' ('+st.pixelPct+' %)':'')+(st.night?' · night':''));
   if(sensor)p.push(st.lux+' lx');
